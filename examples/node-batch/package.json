@@ -1,0 +1,17 @@
+{
+  "name": "els-client-node-batch-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Batch + queue example for @inso_web/els-client",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "@inso_web/els-client": "^0.2.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

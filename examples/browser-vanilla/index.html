@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>@inso_web/els-client — Browser example</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "@inso_web/els-client": "https://esm.sh/@inso_web/els-client@0.2.0"
+    }
+  }
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    button { padding: 0.5rem 1rem; margin-right: 0.5rem; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>ELS Client — Browser example</h1>
+  <p>Откройте devtools console, нажмите кнопку, чтобы отправить демо-ошибку в ELS.</p>
+  <button id="btn">Trigger error</button>
+  <button id="btn-throw">Throw uncaught error</button>
+  <pre id="log">Результат появится здесь...</pre>
+
+  <script type="module">
+    import { ELSClient } from '@inso_web/els-client';
+
+    const apiKey = prompt('Введите API key (els_live_...)') || 'els_live_xxxxxxxx';
+
+    const els = new ELSClient({
+      endpoint: 'https://api.insoweb.ru/els',
+      apiKey,
+      appSlug: 'examples',
+      deploymentEnv: 'DEV',
+      serviceName: 'browser-vanilla',
+    });
+
+    document.getElementById('btn').addEventListener('click', async () => {
+      try {
+        throw new Error('Demo browser error at ' + new Date().toISOString());
+      } catch (err) {
+        const result = await els.sendError({
+          message: err.message,
+          stack: err.stack,
+          url: location.href,
+          level: 'error',
+          source: 'client',
+          userAgent: navigator.userAgent,
+        });
+        document.getElementById('log').textContent = JSON.stringify(result, null, 2);
+      }
+    });
+
+    document.getElementById('btn-throw').addEventListener('click', () => {
+      // Эта ошибка будет поймана window.addEventListener('error') ниже.
+      setTimeout(() => {
+        throw new Error('Uncaught demo error from setTimeout');
+      }, 0);
+    });
+
+    // Авто-перехват глобальных ошибок.
+    window.addEventListener('error', (e) => {
+      els.sendError({
+        message: e.message,
+        stack: e.error?.stack,
+        url: location.href,
+        level: 'error',
+        source: 'client',
+      });
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      els.sendError({
+        message: String(e.reason),
+        url: location.href,
+        level: 'error',
+        source: 'client',
+      });
+    });
+  </script>
+</body>
+</html>
