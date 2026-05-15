@@ -6,103 +6,63 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](https://www.typescriptlang.org/)
 [![license MIT](https://img.shields.io/npm/l/@inso_web/els-client.svg)](./LICENSE)
 
-Лёгкий TypeScript-клиент для **Error Logs Service (ELS)** — SaaS-сервиса централизованного сбора, поиска и аналитики ошибок и событий приложений. Собирает, батчит и отправляет логи из браузера и Node.js — **без транзитивных зависимостей**.
+Lightweight TypeScript client for the **Inso Error Logs Service (ELS)** — a managed SaaS for centralised error and event logging with AI-assisted triage. Batches and ships events from Node.js and the browser with **zero runtime dependencies**.
 
-> **Pino-совместимый API** (`info` / `warn` / `error` / `debug` / `fatal` / `child`) — drop-in замена Pino, Winston, pino-loki без отдельного transport-пакета.
+> **Pino-compatible API** (`info` / `warn` / `error` / `debug` / `fatal` / `child`) — drop-in replacement for Pino, Winston, and Loki transports without an extra package.
+
+> 🇷🇺 [Русская версия → README_RU.md](README_RU.md) &nbsp;•&nbsp; 📚 [SDKs overview → ../README.md](../README.md)
 
 ---
 
-## Содержание
+## Table of contents
 
-- [Что такое ELS](#что-такое-els)
-- [UI: что вы получаете](#ui-что-вы-получаете)
-- [Установка](#установка)
+- [What you get](#what-you-get)
+- [Install](#install)
 - [Quick Start](#quick-start)
-- [Использование как логгер (Pino-compatible)](#использование-как-логгер-pino-compatible)
-- [Миграция с Pino / Winston / Loki](#миграция-с-pino--winston--loki)
-- [Версионирование (`appVersion`)](#версионирование-appversion)
-- [Конфигурация (ELSConfig)](#конфигурация-elsconfig)
+- [Use as a logger (Pino-compatible)](#use-as-a-logger-pino-compatible)
+- [Browser & Node patterns](#browser--node-patterns)
+- [When to use the client vs the queue](#when-to-use-the-client-vs-the-queue)
+- [Core concepts](#core-concepts)
+- [Configuration](#configuration)
+- [Migration](#migration)
+  - [From Pino](#from-pino)
+  - [From Winston](#from-winston)
+  - [From Bunyan](#from-bunyan)
+  - [From console.log](#from-consolelog)
+  - [From @sentry/node](#from-sentrynode)
+  - [From pino-loki](#from-pino-loki)
+- [Versioning (`appVersion`)](#versioning-appversion)
 - [API](#api)
-- [Использование в браузере и Node.js](#использование-в-браузере-и-nodejs)
-- [Advanced](#advanced)
-- [FAQ](#faq)
-- [Пакеты-обёртки](#пакеты-обёртки)
+- [Quick reference](#quick-reference)
+- [Why ELS](#why-els)
+- [Examples](#examples)
+- [Other ELS SDKs](#other-els-sdks)
+- [Pricing](#pricing)
+- [License](#license)
 
 ---
 
-## Что такое ELS
+## What you get
 
-ELS — это сервис централизованного логирования. Он:
+Every event you capture lands in the built-in dashboard with full-text search, faceted filtering, AI-assisted diagnosis, and a version-regressions widget.
 
-- **Принимает** ошибки и события из любых приложений по HTTPS (батчами или по одному).
-- **Хранит** их в PostgreSQL с индексами для быстрого поиска.
-- **Группирует** одинаковые ошибки по fingerprint (нормализованное сообщение + первая строка stack).
-- **Анализирует** через встроенный AI: даёт человекочитаемую диагностику (что произошло, где, как чинить) и обзор всей выборки.
-- **Коррелирует** события: показывает что происходило **до** и **после** ошибки в той же сессии — для отладки причин.
-- **Отслеживает регрессии** по версиям: какие ошибки появились впервые в свежей версии приложения, а какие наоборот перестали возникать.
-- **Защищает** через API-ключи: scoped ключи (write / read / read-any), live/test environments, IP-whitelist, ротация.
+![ELS dashboard preview](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/01-error-logs-list.png)
 
-Этот клиент — тонкий sender. Один пакет, ноль зависимостей, ~3 KB gzip.
+→ **[Full UI tour with all 4 screenshots](../README.md#what-you-get)**
 
 ---
 
-## UI: что вы получаете
-
-ELS из коробки даёт админ-панель. Скриншоты ниже показывают что вы увидите после интеграции этого SDK.
-
-### Список логов с фильтрами и поиском
-
-![Список логов](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/01-error-logs-list.png)
-
-Виртуальная таблица всех событий: trace ID, приложение, источник (client/server), уровень (critical / error / warning / info / debug), сообщение, страница, IP. Слева — fully-faceted сайдбар с фильтрами по приложению, окружению, **версии**, источнику, уровню, браузеру, языку, IP, категории ошибки, fingerprint'у. Сверху быстрые пресеты и Live-mode (auto-refresh каждые 5с).
-
-### Детальная карточка события
-
-![Детальная карточка](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/02-event-detail-info.png)
-
-Полные метаданные события: время сервера и клиента, IP с гео, язык, окружение, **версия приложения**, fingerprint, session ID. Карточки повторений (час / сутки / неделя). Справа — корреляция: что происходило в той же сессии и совпадающие события у других пользователей.
-
-### Ошибка с AI-диагностикой
-
-![Ошибка с AI](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/03-error-detail-ai.png)
-
-Stack trace с распарсенными фреймами. Справа — AI-анализ: что именно сломалось, где (файл / строка), почему и как чинить. Корреляция показывает связанные ошибки в когорте.
-
-### Аналитика и регрессии по версиям
-
-![Аналитика](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/04-analytics-dashboard.png)
-
-Дашборд: общее число событий, критические + ошибки, предупреждения, доля ошибок. AI-обзор слева пишет естественным языком что не так и куда смотреть. Хронология (timeline) с возможностью сравнения с предыдущим периодом. Donut'ы по приложению, источнику, уровню. Тепловая карта по часам/дням, топ URL, топ IP. И главное для нас — **виджет «Регрессии»**: какие fingerprint'ы появились впервые в самой свежей версии и какие пропали.
-
-### Управление API-ключами
-
-![API ключи](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/05-api-keys.png)
-
-Список ключей по приложениям и сервисам. Префикс ключа, окружение (live / test), уровень доступа (write / read / read-any), даты создания и последнего использования. Цветовая индикация активных ключей.
-
-![Действия с ключом](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/06-api-key-actions.png)
-
-Контекстное меню ключа: ротация (генерация нового rawKey, старый продолжает работать ~1 минуту), удаление, копирование префикса.
-
-### Избранные события
-
-![Избранные](https://raw.githubusercontent.com/official-inso/els-go/main/docs/screenshots/07-favorites.png)
-
-Закладки на конкретные trace ID — для расследований. Открываются в одном клике, не теряются между сессиями.
-
----
-
-## Установка
+## Install
 
 ```bash
 npm install @inso_web/els-client
-# или
+# or
 pnpm add @inso_web/els-client
-# или
+# or
 yarn add @inso_web/els-client
 ```
 
-Требования: Node.js 18+ или браузер с глобальным `fetch`.
+**Requirements:** Node.js 18+ or any browser with a global `fetch`.
 
 ---
 
@@ -111,14 +71,14 @@ yarn add @inso_web/els-client
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 
-// Один экземпляр на всё приложение
+// One instance per app
 export const log = new ELSClient({
   endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   serviceName: 'api',
   deploymentEnv: 'PRODUCTION',
-  appVersion: process.env.BUILD_VERSION,    // см. секцию «Версионирование»
+  appVersion: process.env.BUILD_VERSION,    // see "Versioning"
   minLevel: 'info',
 });
 
@@ -127,29 +87,32 @@ log.warn({ userId: 42 }, 'High request rate');
 log.error(err, 'Database query failed');
 ```
 
-Готово. Каждый `log.*(...)` отправит структурированное событие в ELS — fire-and-forget, без блокировок и без шанса уронить ваше приложение.
+Each `log.*(...)` call ships a structured event to ELS — fire-and-forget, non-blocking, never throws.
+
+Don't have an API key yet? **[Sign up at lk.insoweb.ru](https://lk.insoweb.ru)** — takes under a minute.
 
 ---
 
-## Использование как логгер (Pino-compatible)
+## Use as a logger (Pino-compatible)
 
-`ELSClient` реализует Pino-совместимый интерфейс `Logger`. Это значит, что вы можете использовать его как обычный логгер с привычным API — без отдельной библиотеки.
+`ELSClient` implements a Pino-compatible `Logger` interface. Use it as a regular logger — no extra library.
 
 ```ts
-// Контекстные child-логгеры
+// Context-bound child loggers
 const reqLog = log.child({ requestId: 'r1', userId: 42 });
 reqLog.info('processing');
 reqLog.error(err, 'failed');
 ```
 
-**Поведение**:
-- Методы fire-and-forget. Не возвращают Promise, не throw, не ломают приложение.
-- Сетевые ошибки тихо логируются в `console.error`, ваш код не падает.
-- Уровни ниже `minLevel` отбрасываются без отправки.
+**Behaviour:**
 
-**Маппинг уровней на ELS `level`**:
+- Methods are fire-and-forget. They do not return a Promise, do not throw, and never break the host app.
+- Transport errors are logged to `console.error`. Your code keeps running.
+- Anything below `minLevel` is dropped before send.
 
-| Метод SDK | ELS level |
+**Level mapping to ELS `level`:**
+
+| SDK method | ELS level |
 |---|---|
 | `fatal` | `critical` |
 | `error` | `error` |
@@ -160,125 +123,9 @@ reqLog.error(err, 'failed');
 
 ---
 
-## Миграция с Pino / Winston / Loki
+## Browser & Node patterns
 
-Переход с других логгеров — в одну строку. API совпадает.
-
-### Pino → @inso_web/els-client
-
-```diff
-- import pino from 'pino';
-- const log = pino({ level: 'info' });
-+ import { ELSClient } from '@inso_web/els-client';
-+ const log = new ELSClient({ endpoint, apiKey, appSlug, minLevel: 'info' });
-// log.info(), log.warn(), log.error(), log.child() — API совпадает
-```
-
-### Winston → @inso_web/els-client
-
-```diff
-- import winston from 'winston';
-- const log = winston.createLogger({ level: 'info', transports: [...] });
-+ import { ELSClient } from '@inso_web/els-client';
-+ const log = new ELSClient({ endpoint, apiKey, appSlug, minLevel: 'info' });
-```
-
-### pino-loki → @inso_web/els-client
-
-```diff
-- import pino from 'pino';
-- const log = pino({ ... }, pinoLoki({ host: 'loki.local' }));
-+ import { ELSClient } from '@inso_web/els-client';
-+ const log = new ELSClient({ endpoint: 'https://api.insoweb.ru/els', ... });
-```
-
-Концептуально то же: положили лог → он улетел в централизованное хранилище. Без дополнительных пакетов-транспортов и с zero dependencies.
-
----
-
-## Версионирование (`appVersion`)
-
-Поле `appVersion` помогает аналитике ELS отвечать на вопрос **«с какой версии появилась эта ошибка»** и видеть **регрессии** в свежем релизе.
-
-```ts
-new ELSClient({
-  // ...
-  appVersion: process.env.BUILD_VERSION, // или import.meta.env.VITE_BUILD_VERSION в Vite
-});
-```
-
-ELS принимает **любую строку до 128 символов** и автоматически распознаёт формат:
-
-| Тип | Примеры |
-|---|---|
-| `date-compact` | `20260507120000` |
-| `semver` | `1.2.3`, `1.0.0-rc.1`, `2.0.0+build.123` |
-| `calver` | `2026.05`, `26.05.07`, `2026.5.7` |
-| `date-iso` | `2026-05-07`, `2026-05-07T12:00:00Z` |
-| `git-sha` | `a1b2c3d`, `a1b2c3d4e5f6...` |
-| `prefixed` | `v1.2.3`, `release-2026.05`, `main-a1b2c3d` |
-| `opaque` | `production`, `nightly`, `customLabel` |
-
-Аналитика умеет сортировать timeline семантически (внутри одного формата) и через `min(receivedAt) per version` (когда в выборке смешаны форматы).
-
-**Рекомендация**: ставить в Dockerfile/CI `BUILD_VERSION=$(date -u +%Y%m%d%H%M%S)` — лексикографически = хронологически, всегда уникально, легко читается человеком.
-
----
-
-## Конфигурация (ELSConfig)
-
-| Опция | Тип | По умолчанию | Описание |
-|---|---|---|---|
-| `endpoint` | `string` | — | URL инстанса ELS (обязательно) |
-| `apiKey` | `string` | — | API-ключ приложения (обязательно) |
-| `appSlug` | `string` | — | Slug приложения (обязательно) |
-| `deploymentEnv` | `'DEV' \| 'STAGING' \| 'PRODUCTION'` | `'DEV'` | Окружение |
-| `serviceName` | `string` | — | Имя сервиса/модуля внутри приложения |
-| `appVersion` | `string` | — | Версия приложения (любой формат, ≤128 символов) |
-| `timeout` | `number` | `10000` | Таймаут HTTP-запроса в мс |
-| `retries` | `number` | `3` | Число ретраев при сетевых ошибках и 429 |
-| `authHeader` | `'bearer' \| 'x-api-key'` | `'bearer'` | Формат передачи ключа |
-| `minLevel` | `LogLevel` | `'info'` | Минимальный уровень логов для отправки |
-| `loggerDefaults` | `Record<string, unknown>` | `{}` | Базовые поля для всех логов |
-
----
-
-## API
-
-```ts
-class ELSClient implements Logger {
-  constructor(config: ELSConfig);
-
-  // Высокоуровневые (Pino-compatible)
-  fatal(obj: object | string | Error, msg?: string, ...args: unknown[]): void;
-  error(obj: object | string | Error, msg?: string, ...args: unknown[]): void;
-  warn(obj: object | string, msg?: string, ...args: unknown[]): void;
-  info(obj: object | string, msg?: string, ...args: unknown[]): void;
-  debug(obj: object | string, msg?: string, ...args: unknown[]): void;
-  trace(obj: object | string, msg?: string, ...args: unknown[]): void;
-  child(bindings: Record<string, unknown>): Logger;
-  flush(): Promise<void>;
-
-  // Низкоуровневые
-  sendError(entry: ErrorEntry): Promise<void>;
-  sendBatch(entries: ErrorEntry[]): Promise<BatchResult | null>;
-}
-
-class ELSQueue {
-  constructor(client: ELSClient, opts?: QueueOptions);
-  enqueue(entry: ErrorEntry): void;
-  flush(): Promise<void>;
-  stop(): void;
-}
-```
-
-Типы `ErrorEntry`, `ErrorLevel`, `ErrorSource`, `DeploymentEnv`, `BatchResult`, `QueueOptions` экспортируются.
-
----
-
-## Использование в браузере и Node.js
-
-### Браузер (window error handlers)
+### Browser: global error handlers
 
 ```ts
 import { ELSClient, ELSQueue } from '@inso_web/els-client';
@@ -287,7 +134,7 @@ const client = new ELSClient({ /* ... */ });
 const queue = new ELSQueue(client, {
   flushIntervalMs: 5_000,
   maxBatchSize: 20,
-  useBeacon: true, // авто-flush на pagehide через sendBeacon
+  useBeacon: true, // auto-flush on pagehide via sendBeacon
 });
 
 window.addEventListener('error', (e) => {
@@ -311,7 +158,7 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 ```
 
-### Node.js (process-level handlers)
+### Node.js: process-level handlers
 
 ```ts
 process.on('uncaughtException', (err) => {
@@ -336,65 +183,490 @@ process.on('unhandledRejection', (reason) => {
 });
 ```
 
----
+### Edge runtimes / Workers
 
-## Advanced
-
-- **Идемпотентность**: каждому событию клиент присваивает `traceId` (UUID v4), если не задан вручную. Повторные события с тем же `traceId` сервер считает дубликатами.
-- **`Retry-After`**: при 429 клиент уважает заголовок `Retry-After` (секунды), иначе использует линейный бэкофф.
-- **sendBeacon**: `ELSQueue` на `pagehide` использует `navigator.sendBeacon`, чтобы доставить буфер даже при закрытии вкладки.
-- **Silent fail**: клиент не бросает сетевых ошибок наружу — только логирует в `console.error`.
-- **Маленький бандл**: ~3 KB gzip, никаких runtime-зависимостей.
+Works out of the box — the client only uses the global `fetch`. No Node-only APIs.
 
 ---
 
-## FAQ
+## When to use the client vs the queue
 
-**Чем отличается от Sentry?** Меньший бандл, нулевые зависимости, минимальный API. Подходит когда нужен лёгкий error reporter без overhead'а тяжёлого SDK + AI-аналитика на стороне сервера.
+| Scenario | Use |
+|---|---|
+| Single Node service, plenty of CPU, want fewest moving parts | `ELSClient` directly — `log.info(...)`, `log.error(...)` |
+| Browser, want to survive page unload | `ELSClient` + `ELSQueue` with `useBeacon: true` |
+| Bursty traffic in Node, want to coalesce events | `ELSClient` + `ELSQueue` with `maxBatchSize > 1` |
+| Need synchronous delivery confirmation | `await client.sendError(entry)` (low-level path) |
+| Many child contexts (per request, per user) | `log.child({ ...bindings })` |
 
-**Как использовать в React/Vue/Next.js/NestJS?** Берите специализированные обёртки:
-- [`@inso_web/els-react`](https://www.npmjs.com/package/@inso_web/els-react)
-- [`@inso_web/els-vue`](https://www.npmjs.com/package/@inso_web/els-vue)
-- [`@inso_web/els-next`](https://www.npmjs.com/package/@inso_web/els-next)
-- [`@inso_web/els-nest`](https://www.npmjs.com/package/@inso_web/els-nest)
-- [`@inso_web/els-express`](https://www.npmjs.com/package/@inso_web/els-express)
-
-**Работает в edge/workers?** Да — используется только глобальный `fetch`.
-
-**Что если ELS недоступен?** SDK не бросает наружу, не блокирует приложение. Сетевые ошибки и 5xx уходят в `console.error`, событие теряется (fire-and-forget). Для надёжной доставки используйте `ELSQueue` с `useBeacon: true` в браузере.
+Both `ELSClient` and `ELSQueue` route through the same wire format.
 
 ---
 
-## Сравнение с альтернативами
+## Core concepts
 
-|  | `@inso_web/els-client` | Sentry SaaS | LogRocket |
+### Fire-and-forget vs delivery-confirmed
+
+High-level methods (`log.info`, `log.error`, …) are non-blocking. They never throw and never return a Promise the caller has to `await`. For critical paths where you need confirmation:
+
+```ts
+try {
+  await client.sendError({ message: 'payment failed', level: 'critical', /* ... */ });
+} catch (e) {
+  // network / 5xx / 429 — safe to retry from the caller
+}
+```
+
+### Bindings & child loggers
+
+```ts
+const tenantLog = log.child({ tenant: 'acme', region: 'eu-west-1' });
+tenantLog.info('worker started');
+// Server receives meta: { tenant: 'acme', region: 'eu-west-1' }
+```
+
+Children are cheap — create one per request, per job, per session.
+
+### Silent failure
+
+The client never crashes the host. On transport errors it writes to `console.error` and drops the event (fire-and-forget). If you need durability across crashes, use `ELSQueue` with `useBeacon: true` in the browser or sleep on Node-side `process.on('beforeExit', () => client.flush())`.
+
+---
+
+## Configuration
+
+| Option | Type | Default | Description |
 |---|---|---|---|
-| Размер бандла | ~3 KB | ~70 KB | ~50 KB |
-| Zero deps | Да | Нет | Нет |
-| TypeScript strict | Да | Да | Частично |
-| Минималистичный API | Да | Нет | Нет |
-| AI-диагностика | Да (на сервере ELS) | Партнёрская | Нет |
-| Self-hosted ready | Да | Нет (только SaaS) | Нет |
+| `endpoint` | `string` | — | ELS instance URL (required) |
+| `apiKey` | `string` | — | Application API key (required) |
+| `appSlug` | `string` | — | Application slug (required) |
+| `deploymentEnv` | `'DEV' \| 'STAGING' \| 'PRODUCTION'` | `'DEV'` | Environment marker |
+| `serviceName` | `string` | — | Service / module name inside the app |
+| `appVersion` | `string` | — | App version (any format, ≤128 chars) |
+| `timeout` | `number` | `10000` | HTTP request timeout, ms |
+| `retries` | `number` | `3` | Retries on network errors and 429 |
+| `authHeader` | `'bearer' \| 'x-api-key'` | `'bearer'` | Key transport header |
+| `minLevel` | `LogLevel` | `'info'` | Minimum level to send |
+| `loggerDefaults` | `Record<string, unknown>` | `{}` | Default fields injected into every log |
 
 ---
 
-## Пакеты-обёртки
+## Migration
 
-- [`@inso_web/els-express`](https://www.npmjs.com/package/@inso_web/els-express) — Express middleware с `req.log` и error handler. Drop-in замена `pino-http`.
-- [`@inso_web/els-nest`](https://www.npmjs.com/package/@inso_web/els-nest) — NestJS module, `LoggerService`, DI. Drop-in замена встроенного `Logger`.
-- [`@inso_web/els-next`](https://www.npmjs.com/package/@inso_web/els-next) — Next.js helpers для App Router и Pages Router, edge runtime support.
-- [`@inso_web/els-react`](https://www.npmjs.com/package/@inso_web/els-react) — Provider, hooks, `<ErrorBoundary>` для React 17+.
-- [`@inso_web/els-vue`](https://www.npmjs.com/package/@inso_web/els-vue) — plugin и composable для Vue 3.
+### From Pino
+
+`@inso_web/els-client` exposes the same `info / warn / error / debug / fatal / child` API surface — switching is one line per file.
+
+**Before:**
+
+```ts
+import pino from 'pino';
+const log = pino({
+  level: 'info',
+  transport: { target: 'pino-pretty' },
+});
+
+log.info({ userId: 42 }, 'user fetched');
+log.error(err, 'query failed');
+const reqLog = log.child({ requestId: 'r1' });
+```
+
+**After:**
+
+```ts
+import { ELSClient } from '@inso_web/els-client';
+const log = new ELSClient({
+  endpoint: 'https://api.insoweb.ru/els',
+  apiKey: process.env.ELS_API_KEY!,
+  appSlug: 'my-app',
+  minLevel: 'info',
+});
+
+log.info({ userId: 42 }, 'user fetched');
+log.error(err, 'query failed');
+const reqLog = log.child({ requestId: 'r1' });
+```
+
+| Pino concept | ELS equivalent | Notes |
+|---|---|---|
+| `pino({ level: 'info' })` | `new ELSClient({ minLevel: 'info' })` | Same priority ordering |
+| `log.info(obj, msg)` | `log.info(obj, msg)` | Identical signature |
+| `log.child(bindings)` | `log.child(bindings)` | Bindings merge into `meta` |
+| `pino.transport({ target: 'pino-loki' })` | Not needed | Built-in HTTP transport |
+| `pretty` printing | Use `console.log` in dev | ELS is a remote sink, not a TTY printer |
+
+**Gotchas:**
+
+- ELS sends to the network; Pino's TTY-pretty output has no equivalent. Keep `console.log` for local dev.
+- `pino.multistream` has no direct mapping — capture to ELS and `console.log` separately if you need both.
+- The standard `serializers` option is not supported — pre-shape objects in your code or use `BeforeSend`.
+
+---
+
+### From Winston
+
+**Before:**
+
+```ts
+import winston from 'winston';
+const log = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  defaultMeta: { service: 'api' },
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.Http({ host: 'logs.example.com', path: '/' }),
+  ],
+});
+
+log.info('user logged in', { userId: 42 });
+log.error('payment failed', { error: err });
+```
+
+**After:**
+
+```ts
+import { ELSClient } from '@inso_web/els-client';
+const log = new ELSClient({
+  endpoint: 'https://api.insoweb.ru/els',
+  apiKey: process.env.ELS_API_KEY!,
+  appSlug: 'my-app',
+  serviceName: 'api',
+  minLevel: 'info',
+  loggerDefaults: { service: 'api' },
+});
+
+log.info({ userId: 42 }, 'user logged in');
+log.error(err, 'payment failed');
+```
+
+| Winston concept | ELS equivalent | Notes |
+|---|---|---|
+| `winston.createLogger({ level })` | `new ELSClient({ minLevel })` | Same idea |
+| `defaultMeta` | `loggerDefaults` | Merged into every event |
+| `transports: [...]` | Built-in HTTP transport | One destination, no plugin packages |
+| `winston.format.json()` | Always JSON on the wire | Format choice is not exposed |
+| `child(bindings)` | `child(bindings)` | Same behaviour |
+
+**Gotchas:**
+
+- Winston accepts positional `(message, meta)`. ELS follows Pino's `(meta, message)`. Re-order arguments at call sites.
+- Console output is not multiplexed — keep `console.log` separately if you want both.
+- `winston-daily-rotate-file` has no analogue — that role is server-side in ELS.
+
+---
+
+### From Bunyan
+
+**Before:**
+
+```ts
+import bunyan from 'bunyan';
+const log = bunyan.createLogger({
+  name: 'api',
+  level: 'info',
+  streams: [{ stream: process.stdout }],
+});
+
+log.info({ userId: 42 }, 'fetched');
+const reqLog = log.child({ reqId: 'r1' });
+```
+
+**After:**
+
+```ts
+import { ELSClient } from '@inso_web/els-client';
+const log = new ELSClient({
+  endpoint: 'https://api.insoweb.ru/els',
+  apiKey: process.env.ELS_API_KEY!,
+  appSlug: 'api',
+  minLevel: 'info',
+});
+
+log.info({ userId: 42 }, 'fetched');
+const reqLog = log.child({ reqId: 'r1' });
+```
+
+| Bunyan concept | ELS equivalent | Notes |
+|---|---|---|
+| `bunyan.createLogger({ name })` | `new ELSClient({ appSlug, serviceName })` | `name` ≈ `serviceName` |
+| `level: 'info'` | `minLevel: 'info'` | Same string values |
+| `streams: [...]` | Not needed | HTTP transport built-in |
+| `child(bindings)` | `child(bindings)` | Identical |
+
+**Gotchas:**
+
+- Bunyan's `bunyan` CLI for pretty-printing JSON files does not apply — events live in the ELS dashboard.
+- Custom serializers (`serializers.req`, `serializers.err`) have no direct option — shape objects before logging, or use `BeforeSend`.
+
+---
+
+### From console.log
+
+**Before:**
+
+```ts
+console.log('User logged in', userId);
+console.warn('Rate limit close', { current, limit });
+console.error('Payment failed', err);
+```
+
+**After:**
+
+```ts
+import { ELSClient } from '@inso_web/els-client';
+const log = new ELSClient({
+  endpoint: 'https://api.insoweb.ru/els',
+  apiKey: process.env.ELS_API_KEY!,
+  appSlug: 'my-app',
+});
+
+log.info({ userId }, 'User logged in');
+log.warn({ current, limit }, 'Rate limit close');
+log.error(err, 'Payment failed');
+```
+
+| `console` method | ELS method | Notes |
+|---|---|---|
+| `console.log` / `info` | `log.info` | |
+| `console.warn` | `log.warn` | |
+| `console.error` | `log.error` | First arg can be `Error` or `string` |
+| `console.debug` | `log.debug` | Below default `minLevel: 'info'` — bump to capture |
+
+**Gotchas:**
+
+- Variadic positional formatting (`'%s %d'`) is not supported. Convert to structured fields (`{ userId, count }`).
+- Keep `console.*` for local dev / ephemeral debug; remote events should go via the client.
+
+---
+
+### From @sentry/node
+
+**Before:**
+
+```ts
+import * as Sentry from '@sentry/node';
+Sentry.init({
+  dsn: 'https://public@sentry.example.com/1',
+  environment: 'production',
+  release: process.env.BUILD_VERSION,
+});
+
+Sentry.captureException(err);
+Sentry.captureMessage('payment timeout', 'warning');
+Sentry.setUser({ id: '42', email: 'a@b.com' });
+```
+
+**After:**
+
+```ts
+import { ELSClient } from '@inso_web/els-client';
+const client = new ELSClient({
+  endpoint: 'https://api.insoweb.ru/els',
+  apiKey: process.env.ELS_API_KEY!,
+  appSlug: 'my-app',
+  deploymentEnv: 'PRODUCTION',
+  appVersion: process.env.BUILD_VERSION,
+});
+
+client.error(err);
+client.warn('payment timeout');
+client.child({ user: { id: '42', email: 'a@b.com' } });
+```
+
+| Sentry concept | ELS equivalent | Notes |
+|---|---|---|
+| `dsn` | `endpoint` + `apiKey` + `appSlug` | DSN is split into three explicit fields |
+| `environment` | `deploymentEnv` | Same idea, fixed enum |
+| `release` | `appVersion` | Any string ≤128 chars |
+| `captureException(err)` | `client.error(err)` | |
+| `captureMessage(msg, level)` | `client.<level>(msg)` | Pick a method per level |
+| `setUser({ id, email })` | `client.child({ user: { id, email } })` | Or pass via `loggerDefaults` |
+| `beforeSend` | `BeforeSend` (on `ELSQueue`) | Same role |
+| Source maps upload | Not provided | If critical — keep Sentry alongside |
+| Performance / tracing | Not provided | ELS focuses on logging, not APM |
+
+**Gotchas:**
+
+- ELS does not symbolicate via source maps. Ship readable stacks (preserve names through bundlers) or pair with another tool.
+- Breadcrumbs have no direct concept — use child loggers per request to carry context.
+- Sentry's `scope` push/pop pattern maps to ephemeral `child` loggers.
+
+---
+
+### From pino-loki
+
+**Before:**
+
+```ts
+import pino from 'pino';
+import { pinoLoki } from 'pino-loki';
+
+const log = pino({
+  level: 'info',
+}, pinoLoki({ host: 'http://loki.internal:3100' }));
+```
+
+**After:**
+
+```ts
+import { ELSClient } from '@inso_web/els-client';
+const log = new ELSClient({
+  endpoint: 'https://api.insoweb.ru/els',
+  apiKey: process.env.ELS_API_KEY!,
+  appSlug: 'my-app',
+  minLevel: 'info',
+});
+```
+
+| pino-loki concept | ELS equivalent | Notes |
+|---|---|---|
+| Loki labels | `appSlug`, `serviceName`, `deploymentEnv`, fields in `meta` | All of the above are queryable in the dashboard |
+| `host` | `endpoint` | Plus auth header |
+| Batching options | Built-in (`ELSQueue`) | Defaults are sane; tune if needed |
+
+**Gotchas:**
+
+- Loki is label-cardinality-sensitive; ELS is not — you can put high-cardinality user IDs in `meta` freely.
+- LogQL has no equivalent — ELS uses a faceted UI with full-text search over `message`, `meta` keys.
+
+---
+
+## Versioning (`appVersion`)
+
+The `appVersion` field powers ELS analytics for **regression detection** — “which errors first appeared in the latest release.”
+
+```ts
+new ELSClient({
+  // ...
+  appVersion: process.env.BUILD_VERSION, // or import.meta.env.VITE_BUILD_VERSION
+});
+```
+
+ELS accepts **any string up to 128 characters** and auto-detects the format:
+
+| Type | Examples |
+|---|---|
+| `date-compact` | `20260507120000` |
+| `semver` | `1.2.3`, `1.0.0-rc.1`, `2.0.0+build.123` |
+| `calver` | `2026.05`, `26.05.07`, `2026.5.7` |
+| `date-iso` | `2026-05-07`, `2026-05-07T12:00:00Z` |
+| `git-sha` | `a1b2c3d`, `a1b2c3d4e5f6...` |
+| `prefixed` | `v1.2.3`, `release-2026.05`, `main-a1b2c3d` |
+| `opaque` | `production`, `nightly`, `customLabel` |
+
+The analytics layer sorts timelines semantically within one format and falls back to `min(receivedAt) per version` when the dataset mixes formats.
+
+**Recommended setup** — set `BUILD_VERSION=$(date -u +%Y%m%d%H%M%S)` in CI. Lexicographic = chronological, always unique, readable.
+
+---
+
+## API
+
+```ts
+class ELSClient implements Logger {
+  constructor(config: ELSConfig);
+
+  // High-level (Pino-compatible)
+  fatal(obj: object | string | Error, msg?: string, ...args: unknown[]): void;
+  error(obj: object | string | Error, msg?: string, ...args: unknown[]): void;
+  warn(obj: object | string, msg?: string, ...args: unknown[]): void;
+  info(obj: object | string, msg?: string, ...args: unknown[]): void;
+  debug(obj: object | string, msg?: string, ...args: unknown[]): void;
+  trace(obj: object | string, msg?: string, ...args: unknown[]): void;
+  child(bindings: Record<string, unknown>): Logger;
+  flush(): Promise<void>;
+
+  // Low-level
+  sendError(entry: ErrorEntry): Promise<void>;
+  sendBatch(entries: ErrorEntry[]): Promise<BatchResult | null>;
+}
+
+class ELSQueue {
+  constructor(client: ELSClient, opts?: QueueOptions);
+  enqueue(entry: ErrorEntry): void;
+  flush(): Promise<void>;
+  stop(): void;
+}
+```
+
+Types `ErrorEntry`, `ErrorLevel`, `ErrorSource`, `DeploymentEnv`, `BatchResult`, `QueueOptions` are exported.
+
+---
+
+## Quick reference
+
+| Need | Use |
+|---|---|
+| Quick Node capture | `new ELSClient({ endpoint, apiKey, appSlug })` |
+| Browser with page-unload safety | `ELSClient` + `ELSQueue({ useBeacon: true })` |
+| Bursty Node service | `ELSClient` + `ELSQueue({ maxBatchSize: 50 })` |
+| Per-request bindings | `log.child({ requestId, userId })` |
+| Delivery confirmation | `await client.sendError(entry)` |
+| Suppress noisy levels | `minLevel: 'warn'` |
+| Mask PII before send | `ELSQueue({ beforeSend: e => mask(e) })` |
+| Health probe | `await client.health()` |
+| Graceful Node shutdown | `process.on('beforeExit', () => client.flush())` |
+
+---
+
+## Why ELS
+
+ELS for Node.js is a focused logging SaaS, not a full observability suite. It optimises for capture speed, AI-driven triage, and a low integration cost.
+
+- **Lower weight.** ~3 KB gzip in the browser, single dependency-free package on Node — no transitive deps.
+- **Zero external API calls.** Only `POST /errors[/batch]` and `GET /health`. No trackers, no manifests.
+- **AI-assisted diagnosis** on every stack trace, out of the box — no add-ons, no extra setup.
+- **5-minute integration.** Install → set API key → done. Same wire format works for `.NET`, `JVM`, `Go` when you expand.
+- **Predictable price.** Tariffs live in the dashboard, not in a per-event spreadsheet.
+
+| Feature | ELS | Sentry | Datadog | Loki | LogRocket |
+|---|---|---|---|---|---|
+| AI on stack traces | Built-in | Paid add-on | Paid add-on | None | None |
+| Zero-dep SDK | Yes | No | No | No | No |
+| Free tier retention | 24h | 30d (limited) | Trial only | Self-cost | 3–30d |
+| Setup time | ~5 min | 10–20 min | 30–60 min | Hours | 10–20 min |
+
+ELS does **not** ship full APM / tracing, source-map upload, session replay, frontend RUM, or infra metrics. If you need any of those, pair ELS with Grafana / Datadog or stay on Sentry.
+
+→ **Sign up at [lk.insoweb.ru](https://lk.insoweb.ru)** to grab an API key.
 
 ---
 
 ## Examples
 
-Runnable примеры в [`./examples/`](./examples/):
+Runnable samples in [`./examples/`](./examples/):
 
-- `node-basic` — Node.js простой sender
-- `node-batch` — batch + queue с graceful shutdown
-- `browser-vanilla` — HTML через esm.sh CDN
+- `node-basic` — minimal Node sender
+- `node-batch` — batch + queue with graceful shutdown
+- `browser-vanilla` — esm.sh CDN HTML page
+
+---
+
+## Other ELS SDKs
+
+Same wire format, same dashboard — pick by stack.
+
+**Node.js family**
+- [`@inso_web/els-client`](../js/README.md) — base TS / Node / browser client (this package)
+- [`@inso_web/els-express`](../express/README.md) — Express middleware
+- [`@inso_web/els-next`](../next/README.md) — Next.js helpers (App + Pages router)
+- [`@inso_web/els-nest`](../nest/README.md) — NestJS module
+- [`@inso_web/els-react`](../react/README.md) — React Provider, hooks, ErrorBoundary
+- [`@inso_web/els-vue`](../vue/README.md) — Vue 3 plugin
+
+**Other stacks**
+- [`Inso.Els`](../csharp/README.md) — .NET (Core + ASP.NET Core + ILogger)
+- [`io.github.official-inso:els-core`](../java/README.md) — Java + Spring Boot starter + SLF4J
+- [`github.com/official-inso/els-go`](../els-go/README.md) — Go
+
+→ **Full overview & comparison:** [../README.md](../README.md) · [github.com/official-inso/els-go/blob/main/sdks/README.md](https://github.com/official-inso/els-go/blob/main/sdks/README.md)
+
+---
+
+## Pricing
+
+Free tier — **24-hour log retention**. See **[lk.insoweb.ru](https://lk.insoweb.ru)** for the full tariff matrix.
 
 ---
 
