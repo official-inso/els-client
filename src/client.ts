@@ -10,8 +10,31 @@ import type {
 const DEFAULT_TIMEOUT = 10_000;
 const DEFAULT_RETRIES = 3;
 
+/** Hardcoded ELS endpoint. Callers never need to configure it. */
+const DEFAULT_ENDPOINT = "https://api.insoweb.ru/els";
+
+/** sessionStorage key under which the auto-generated session id is persisted. */
+const SESSION_STORAGE_KEY = "els:sessionId";
+
+/**
+ * Resolves the endpoint: always DEFAULT_ENDPOINT. An internal (undocumented)
+ * override via the `ELS_ENDPOINT` env var exists for tests and self-hosted
+ * installs only — it is not part of the public API.
+ */
+function resolveEndpoint(): string {
+  if (typeof process !== "undefined" && process.env && process.env.ELS_ENDPOINT) {
+    return process.env.ELS_ENDPOINT;
+  }
+  return DEFAULT_ENDPOINT;
+}
+
+/** Detects the runtime: a browser window → "client", otherwise → "server". */
+function detectSource(): "client" | "server" {
+  return typeof window !== "undefined" ? "client" : "server";
+}
+
+/** Generates an RFC4122-v4-ish id (not cryptographically strong, but unique enough). */
 function generateTraceId(): string {
-  // RFC4122 v4-ish (не криптостойко, но достаточно уникально)
   const hex = "0123456789abcdef";
   let out = "";
   for (let i = 0; i < 32; i++) {
@@ -19,6 +42,83 @@ function generateTraceId(): string {
     out += hex[Math.floor(Math.random() * 16)];
   }
   return out;
+}
+
+/** In-memory session id — second fallback when sessionStorage is unavailable. */
+let cachedSessionId: string | undefined;
+
+/**
+ * Resolves a session id used to correlate all errors from one user session.
+ * Three tiers, tried in order:
+ *   1. sessionStorage — survives page reloads within the same browser tab.
+ *   2. an in-memory id — lives for the page/process lifetime (SSR, privacy mode).
+ *   3. a fresh ephemeral id — if even step 2 is somehow unavailable.
+ */
+function resolveSessionId(): string {
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      let id = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (!id) {
+        id = generateTraceId();
+        sessionStorage.setItem(SESSION_STORAGE_KEY, id);
+      }
+      return id;
+    }
+  } catch {
+    /* sessionStorage may throw in privacy mode or be absent on the server */
+  }
+  try {
+    if (!cachedSessionId) cachedSessionId = generateTraceId();
+    return cachedSessionId;
+  } catch {
+    return generateTraceId();
+  }
+}
+
+/** Minimal, dependency-free browser detection from a user-agent string. */
+function parseBrowser(ua: string): string {
+  if (!ua) return "";
+  const m = ua.match(/(Edg|OPR|Chrome|Firefox|Safari)\/([\d.]+)/);
+  if (!m) return "";
+  const nameMap: Record<string, string> = {
+    Edg: "Edge",
+    OPR: "Opera",
+    Chrome: "Chrome",
+    Firefox: "Firefox",
+    Safari: "Safari",
+  };
+  const name = nameMap[m[1]] ?? m[1];
+  const version = m[2].split(".")[0];
+  return `${name} ${version}`;
+}
+
+/**
+ * Fills browser-only context fields (userAgent, language, screen/viewport size,
+ * referrer, browser) from navigator/window/document when running in a browser.
+ * Only sets fields that are still empty, and never throws.
+ */
+function collectBrowserContext(entry: ErrorEntry): void {
+  // Gate on `window` so a real DOM is required. Node 21+ exposes a global
+  // `navigator`, but it is not a browser — we must not treat it as one.
+  if (typeof window === "undefined") return;
+  try {
+    if (typeof navigator !== "undefined") {
+      if (!entry.userAgent && navigator.userAgent) entry.userAgent = navigator.userAgent;
+      if (!entry.language && navigator.language) entry.language = navigator.language;
+      if (!entry.browser && navigator.userAgent) entry.browser = parseBrowser(navigator.userAgent);
+    }
+    if (typeof screen !== "undefined" && !entry.screenSize) {
+      entry.screenSize = `${screen.width}x${screen.height}`;
+    }
+    if (typeof window !== "undefined" && !entry.viewportSize) {
+      entry.viewportSize = `${window.innerWidth}x${window.innerHeight}`;
+    }
+    if (typeof document !== "undefined" && !entry.referrer && document.referrer) {
+      entry.referrer = document.referrer;
+    }
+  } catch {
+    /* be defensive: never let context collection break a capture */
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -41,6 +141,18 @@ function mapLogLevel(level: LogLevel): ErrorLevel {
   return level as ErrorLevel;
 }
 
+/**
+ * The ELS client. Sends errors and structured logs to the Error Logs Service.
+ *
+ * It is also a Pino-compatible {@link Logger} (see `info`/`error`/`child`/…).
+ * In a browser it auto-fills page/device context and a session id; on the
+ * server those stay empty. Only `apiKey` and `appSlug` are required.
+ *
+ * @example
+ * const els = new ELSClient({ apiKey: "els_live_…", appSlug: "web" });
+ * await els.sendError({ message: "Checkout failed", level: "error" });
+ * els.info({ userId: 42 }, "user logged in"); // logger API
+ */
 export class ELSClient implements Logger {
   private readonly endpoint: string;
   private readonly apiKey: string;
@@ -53,13 +165,15 @@ export class ELSClient implements Logger {
   private readonly authHeader: "bearer" | "x-api-key";
   private readonly minLevel: LogLevel;
   private readonly loggerDefaults: Record<string, unknown>;
+  private readonly autoContext: boolean;
+  private readonly autoSessionId: boolean;
+  private readonly configSessionId?: string;
 
   constructor(config: ELSConfig) {
-    if (!config.endpoint) throw new Error("ELSClient: endpoint is required");
     if (!config.apiKey) throw new Error("ELSClient: apiKey is required");
     if (!config.appSlug) throw new Error("ELSClient: appSlug is required");
 
-    this.endpoint = config.endpoint.replace(/\/+$/, "");
+    this.endpoint = resolveEndpoint().replace(/\/+$/, "");
     this.apiKey = config.apiKey;
     this.appSlug = config.appSlug;
     this.deploymentEnv = config.deploymentEnv ?? "DEV";
@@ -70,6 +184,9 @@ export class ELSClient implements Logger {
     this.authHeader = config.authHeader ?? "bearer";
     this.minLevel = config.minLevel ?? "info";
     this.loggerDefaults = config.loggerDefaults ?? {};
+    this.autoContext = config.autoContext ?? true;
+    this.autoSessionId = config.autoSessionId ?? true;
+    this.configSessionId = config.sessionId;
   }
 
   private buildHeaders(): Record<string, string> {
@@ -84,8 +201,8 @@ export class ELSClient implements Logger {
     return headers;
   }
 
-  private enrich(entry: ErrorEntry): Required<Pick<ErrorEntry, "traceId" | "timestamp" | "appSlug" | "deploymentEnv">> & ErrorEntry {
-    return {
+  private enrich(entry: ErrorEntry): Required<Pick<ErrorEntry, "traceId" | "timestamp" | "appSlug" | "deploymentEnv" | "url" | "source">> & ErrorEntry {
+    const enriched = {
       ...entry,
       traceId: entry.traceId ?? generateTraceId(),
       timestamp: entry.timestamp ?? new Date().toISOString(),
@@ -93,7 +210,20 @@ export class ELSClient implements Logger {
       deploymentEnv: entry.deploymentEnv ?? this.deploymentEnv,
       serviceName: entry.serviceName ?? this.serviceName,
       appVersion: entry.appVersion ?? this.appVersion,
+      url: entry.url ?? (typeof location !== "undefined" ? location.href : ""),
+      source: entry.source ?? detectSource(),
     };
+
+    // Auto-fill browser-only fields (no-op on the server).
+    if (this.autoContext) collectBrowserContext(enriched);
+
+    // Auto-fill a correlation session id when none was provided.
+    if (!enriched.sessionId) {
+      if (this.configSessionId) enriched.sessionId = this.configSessionId;
+      else if (this.autoSessionId) enriched.sessionId = resolveSessionId();
+    }
+
+    return enriched;
   }
 
   private async doFetch(path: string, body: unknown): Promise<Response> {
@@ -134,12 +264,21 @@ export class ELSClient implements Logger {
     throw lastErr ?? new Error("ELSClient: request failed");
   }
 
+  /**
+   * Sends a single entry to ELS. The entry is enriched with defaults and
+   * (in a browser) page/device context. Resolves once the request completes;
+   * network/HTTP failures are logged to `console.error` and never thrown, so a
+   * failed send won't break your app.
+   *
+   * @example
+   * await els.sendError({ message: "Payment failed", level: "error", url: "/pay" });
+   */
   async sendError(entry: ErrorEntry): Promise<void> {
     try {
       const payload = this.enrich(entry);
       const res = await this.doFetch("/errors", payload);
       if (!res.ok && res.status !== 429) {
-        // silent fail: не ломаем приложение клиента
+        // Silent fail: never break the host application on a bad response.
         console.error(`[ELSClient] sendError failed: ${res.status}`);
       }
     } catch (err) {
@@ -147,6 +286,13 @@ export class ELSClient implements Logger {
     }
   }
 
+  /**
+   * Sends many entries in one request. Each entry is enriched individually.
+   * Returns the server {@link BatchResult}, or `null` on failure. Never throws.
+   *
+   * @example
+   * await els.sendBatch([{ message: "a" }, { message: "b", level: "warning" }]);
+   */
   async sendBatch(entries: ErrorEntry[]): Promise<BatchResult | null> {
     if (entries.length === 0) return { accepted: 0, duplicates: 0, errors: 0 };
     try {
@@ -167,7 +313,10 @@ export class ELSClient implements Logger {
     }
   }
 
-  /** Для совместимости с очередью; по умолчанию клиент не батчит. */
+  /**
+   * No-op on the bare client (it doesn't buffer). Present for {@link Logger}
+   * compatibility; {@link ELSQueue} provides real flushing.
+   */
   async flush(): Promise<void> {
     return;
   }
@@ -226,7 +375,7 @@ export class ELSClient implements Logger {
     const entry: ErrorEntry & Record<string, unknown> = {
       message,
       level: mapLogLevel(level),
-      source: "server",
+      source: detectSource(),
       url: typeof merged.url === "string" ? (merged.url as string) : "",
     };
 
@@ -237,9 +386,8 @@ export class ELSClient implements Logger {
     }
     if (stack && !entry.stack) entry.stack = stack;
 
-    // Произвольные кастомные поля складываем в level-prefixed keys: bindings становятся
-    // частью payload как top-level fields (ELS принимает и игнорирует unknown).
-    // Чтобы не терять контекст для child-логгеров — мерджим всё в payload.
+    // Arbitrary custom fields become top-level payload fields (ELS accepts and
+    // ignores unknown keys). Merging keeps child-logger bindings in the payload.
     const customFields: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(merged)) {
       if (!known.has(k) && k !== "message" && k !== "level" && k !== "source") {
@@ -248,7 +396,7 @@ export class ELSClient implements Logger {
     }
     Object.assign(entry, customFields);
 
-    // Fire-and-forget — никогда не throw наружу
+    // Fire-and-forget — never throws to the caller.
     this.sendError(entry).catch((err) => {
       if (typeof console !== "undefined") {
         console.error("[ELSClient.logger] failed to send log:", err);

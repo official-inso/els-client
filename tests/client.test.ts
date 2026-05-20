@@ -3,7 +3,6 @@ import { ELSClient } from "../src/client.js";
 
 describe("ELSClient", () => {
   const config = {
-    endpoint: "https://api.insoweb.ru/els",
     apiKey: "els_live_test",
     appSlug: "test-app",
   };

@@ -1,7 +1,6 @@
 import { ELSClient } from '@inso_web/els-client';
 
 const els = new ELSClient({
-  endpoint: process.env.ELS_URL || 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY || 'els_live_xxxxxxxx',
   appSlug: 'examples',
   deploymentEnv: 'DEV',
@@ -16,9 +15,7 @@ async function main() {
     const result = await els.sendError({
       message: e.message,
       stack: e.stack,
-      url: 'file://' + import.meta.url,
       level: 'error',
-      source: 'server',
     });
     console.log('Sent error:', result);
   }

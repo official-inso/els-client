@@ -28,7 +28,6 @@ describe("ELSClient logger API", () => {
 
   function mk(extra: Record<string, unknown> = {}) {
     return new ELSClient({
-      endpoint: "https://example.test",
       apiKey: "test-key",
       appSlug: "test-app",
       serviceName: "svc",
