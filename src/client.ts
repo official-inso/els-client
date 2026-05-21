@@ -10,17 +10,12 @@ import type {
 const DEFAULT_TIMEOUT = 10_000;
 const DEFAULT_RETRIES = 3;
 
-/** Hardcoded ELS endpoint. Callers never need to configure it. */
 const DEFAULT_ENDPOINT = "https://api.insoweb.ru/els";
 
 /** sessionStorage key under which the auto-generated session id is persisted. */
 const SESSION_STORAGE_KEY = "els:sessionId";
 
-/**
- * Resolves the endpoint: always DEFAULT_ENDPOINT. An internal (undocumented)
- * override via the `ELS_ENDPOINT` env var exists for tests and self-hosted
- * installs only — it is not part of the public API.
- */
+// Internal override via env ELS_ENDPOINT (tests / self-hosted only).
 function resolveEndpoint(): string {
   if (typeof process !== "undefined" && process.env && process.env.ELS_ENDPOINT) {
     return process.env.ELS_ENDPOINT;

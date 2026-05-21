@@ -76,7 +76,6 @@ import { ELSClient } from '@inso_web/els-client';
 
 // One instance per app
 export const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   serviceName: 'api',
@@ -240,7 +239,6 @@ The client never crashes the host. On transport errors it writes to `console.err
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `endpoint` | `string` | — | ELS instance URL (required) |
 | `apiKey` | `string` | — | Application API key (required) |
 | `appSlug` | `string` | — | Application slug (required) |
 | `deploymentEnv` | `'DEV' \| 'STAGING' \| 'PRODUCTION'` | `'DEV'` | Environment marker |
@@ -279,7 +277,6 @@ const reqLog = log.child({ requestId: 'r1' });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   minLevel: 'info',
@@ -331,7 +328,6 @@ log.error('payment failed', { error: err });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   serviceName: 'api',
@@ -380,7 +376,6 @@ const reqLog = log.child({ reqId: 'r1' });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'api',
   minLevel: 'info',
@@ -419,7 +414,6 @@ console.error('Payment failed', err);
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
 });
@@ -465,7 +459,6 @@ Sentry.setUser({ id: '42', email: 'a@b.com' });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const client = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   deploymentEnv: 'PRODUCTION',
@@ -479,7 +472,7 @@ client.child({ user: { id: '42', email: 'a@b.com' } });
 
 | Sentry concept | ELS equivalent | Notes |
 |---|---|---|
-| `dsn` | `endpoint` + `apiKey` + `appSlug` | DSN is split into three explicit fields |
+| `dsn` | `apiKey` + `appSlug` | DSN is split into three explicit fields |
 | `environment` | `deploymentEnv` | Same idea, fixed enum |
 | `release` | `appVersion` | Any string ≤128 chars |
 | `captureException(err)` | `client.error(err)` | |
@@ -515,7 +508,6 @@ const log = pino({
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   minLevel: 'info',
@@ -525,7 +517,6 @@ const log = new ELSClient({
 | pino-loki concept | ELS equivalent | Notes |
 |---|---|---|
 | Loki labels | `appSlug`, `serviceName`, `deploymentEnv`, fields in `meta` | All of the above are queryable in the dashboard |
-| `host` | `endpoint` | Plus auth header |
 | Batching options | Built-in (`ELSQueue`) | Defaults are sane; tune if needed |
 
 **Gotchas:**
@@ -601,7 +592,7 @@ Types `ErrorEntry`, `ErrorLevel`, `ErrorSource`, `DeploymentEnv`, `BatchResult`,
 
 | Need | Use |
 |---|---|
-| Quick Node capture | `new ELSClient({ endpoint, apiKey, appSlug })` |
+| Quick Node capture | `new ELSClient({ apiKey, appSlug })` |
 | Browser with page-unload safety | `ELSClient` + `ELSQueue({ useBeacon: true })` |
 | Bursty Node service | `ELSClient` + `ELSQueue({ maxBatchSize: 50 })` |
 | Per-request bindings | `log.child({ requestId, userId })` |

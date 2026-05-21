@@ -77,7 +77,7 @@ export interface ErrorEntry {
 
 /**
  * Configuration for an {@link ELSClient}. Only `apiKey` and `appSlug` are
- * required; the endpoint is hardcoded in the SDK.
+ * required.
  *
  * @example
  * const els = new ELSClient({ apiKey: "els_live_…", appSlug: "web" });

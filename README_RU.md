@@ -76,7 +76,6 @@ import { ELSClient } from '@inso_web/els-client';
 
 // Один экземпляр на приложение
 export const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   serviceName: 'api',
@@ -240,7 +239,6 @@ tenantLog.info('worker started');
 
 | Опция | Тип | По умолчанию | Описание |
 |---|---|---|---|
-| `endpoint` | `string` | — | URL инстанса ELS (обязательно) |
 | `apiKey` | `string` | — | API-ключ приложения (обязательно) |
 | `appSlug` | `string` | — | Slug приложения (обязательно) |
 | `deploymentEnv` | `'DEV' \| 'STAGING' \| 'PRODUCTION'` | `'DEV'` | Окружение |
@@ -279,7 +277,6 @@ const reqLog = log.child({ requestId: 'r1' });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   minLevel: 'info',
@@ -331,7 +328,6 @@ log.error('payment failed', { error: err });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   serviceName: 'api',
@@ -380,7 +376,6 @@ const reqLog = log.child({ reqId: 'r1' });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'api',
   minLevel: 'info',
@@ -419,7 +414,6 @@ console.error('Payment failed', err);
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
 });
@@ -465,7 +459,6 @@ Sentry.setUser({ id: '42', email: 'a@b.com' });
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const client = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   deploymentEnv: 'PRODUCTION',
@@ -479,7 +472,7 @@ client.child({ user: { id: '42', email: 'a@b.com' } });
 
 | Sentry | ELS | Заметки |
 |---|---|---|
-| `dsn` | `endpoint` + `apiKey` + `appSlug` | DSN разбит на три явных поля |
+| `dsn` | `apiKey` + `appSlug` | DSN разбит на три явных поля |
 | `environment` | `deploymentEnv` | То же, фиксированный enum |
 | `release` | `appVersion` | Любая строка ≤128 символов |
 | `captureException(err)` | `client.error(err)` | |
@@ -515,7 +508,6 @@ const log = pino({
 ```ts
 import { ELSClient } from '@inso_web/els-client';
 const log = new ELSClient({
-  endpoint: 'https://api.insoweb.ru/els',
   apiKey: process.env.ELS_API_KEY!,
   appSlug: 'my-app',
   minLevel: 'info',
@@ -525,7 +517,6 @@ const log = new ELSClient({
 | pino-loki | ELS | Заметки |
 |---|---|---|
 | Loki labels | `appSlug`, `serviceName`, `deploymentEnv`, поля в `meta` | Всё это доступно в фильтрах панели |
-| `host` | `endpoint` | Плюс auth-заголовок |
 | Опции батчинга | встроены (`ELSQueue`) | Дефолты разумные, можно тюнить |
 
 **Подводные камни:**
@@ -601,7 +592,7 @@ class ELSQueue {
 
 | Нужно | Делайте |
 |---|---|
-| Быстрый Node-захват | `new ELSClient({ endpoint, apiKey, appSlug })` |
+| Быстрый Node-захват | `new ELSClient({ apiKey, appSlug })` |
 | Браузер с устойчивостью к unload | `ELSClient` + `ELSQueue({ useBeacon: true })` |
 | Burst-трафик в Node | `ELSClient` + `ELSQueue({ maxBatchSize: 50 })` |
 | Per-request bindings | `log.child({ requestId, userId })` |
