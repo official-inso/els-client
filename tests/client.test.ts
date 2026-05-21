@@ -70,4 +70,65 @@ describe("ELSClient", () => {
     ).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalled();
   });
+
+  it("server entry without url omits url (never sends empty string)", async () => {
+    (globalThis.fetch as any).mockResolvedValueOnce(
+      new Response(null, { status: 201 })
+    );
+    const client = new ELSClient(config);
+    await client.sendError({ message: "no url", source: "server" });
+    const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
+    expect(body.source).toBe("server");
+    expect(body.url).toBeUndefined();
+    expect("url" in body).toBe(false);
+  });
+
+  it("logs the response body on a 4xx (validation details surfaced)", async () => {
+    (globalThis.fetch as any).mockResolvedValueOnce(
+      new Response('{"error":"VALIDATION_ERROR","details":[{"path":["url"]}]}', {
+        status: 400,
+      })
+    );
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = new ELSClient({ ...config, retries: 0 });
+    await client.sendError({ message: "bad", url: "u" });
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("400"),
+      expect.stringContaining("VALIDATION_ERROR")
+    );
+  });
+});
+
+describe("ELSClient browser url fallback", () => {
+  const config = { apiKey: "els_live_test", appSlug: "test-app" };
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    // Minimal browser-like globals so detectSource() → "client" and the
+    // location.href fallback engages.
+    vi.stubGlobal("window", { innerWidth: 800, innerHeight: 600 } as any);
+    vi.stubGlobal("location", { href: "https://app.example/checkout" } as any);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("info() without url falls back to location.href (not empty string)", async () => {
+    (globalThis.fetch as any).mockResolvedValue(new Response(null, { status: 201 }));
+    const client = new ELSClient(config);
+    client.info("hello");
+    await new Promise((r) => setTimeout(r, 10));
+    const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
+    expect(body.source).toBe("client");
+    expect(body.url).toBe("https://app.example/checkout");
+  });
+
+  it("sendError without url falls back to location.href", async () => {
+    (globalThis.fetch as any).mockResolvedValueOnce(new Response(null, { status: 201 }));
+    const client = new ELSClient(config);
+    await client.sendError({ message: "boom", source: "client", url: "" } as any);
+    const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
+    expect(body.url).toBe("https://app.example/checkout");
+  });
 });

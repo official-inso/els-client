@@ -1,6 +1,7 @@
 import type {
   ELSConfig,
   ErrorEntry,
+  WritableErrorEntry,
   BatchResult,
   ErrorLevel,
   Logger,
@@ -92,14 +93,19 @@ function parseBrowser(ua: string): string {
  * referrer, browser) from navigator/window/document when running in a browser.
  * Only sets fields that are still empty, and never throws.
  */
-function collectBrowserContext(entry: ErrorEntry): void {
+function collectBrowserContext(entry: WritableErrorEntry): void {
   // Gate on `window` so a real DOM is required. Node 21+ exposes a global
   // `navigator`, but it is not a browser — we must not treat it as one.
   if (typeof window === "undefined") return;
   try {
     if (typeof navigator !== "undefined") {
-      if (!entry.userAgent && navigator.userAgent) entry.userAgent = navigator.userAgent;
-      if (!entry.language && navigator.language) entry.language = navigator.language;
+      // Lengths are clamped to the ELS schema limits (userAgent ≤ 1000,
+      // language ≤ 20) so a long header/locale never gets the whole entry
+      // rejected with a 400.
+      if (!entry.userAgent && navigator.userAgent)
+        entry.userAgent = navigator.userAgent.slice(0, 1000);
+      if (!entry.language && navigator.language)
+        entry.language = normalizeLanguage(navigator.language);
       if (!entry.browser && navigator.userAgent) entry.browser = parseBrowser(navigator.userAgent);
     }
     if (typeof screen !== "undefined" && !entry.screenSize) {
@@ -109,15 +115,33 @@ function collectBrowserContext(entry: ErrorEntry): void {
       entry.viewportSize = `${window.innerWidth}x${window.innerHeight}`;
     }
     if (typeof document !== "undefined" && !entry.referrer && document.referrer) {
-      entry.referrer = document.referrer;
+      entry.referrer = document.referrer.slice(0, 2000);
     }
   } catch {
     /* be defensive: never let context collection break a capture */
   }
 }
 
+/**
+ * Normalizes an `Accept-Language`/`navigator.language` value to the first
+ * language tag, trimmed to the ELS schema limit (≤ 20 chars). A raw header like
+ * `"ru-RU,ru;q=0.9,en-US;q=0.8"` becomes `"ru-RU"`.
+ */
+function normalizeLanguage(value: string): string {
+  return value.split(",")[0]?.trim().slice(0, 20) ?? "";
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Reads a response body as text for diagnostics, never throwing. */
+async function readBodySafe(res: Response): Promise<string> {
+  try {
+    return (await res.text()).slice(0, 2000);
+  } catch {
+    return "";
+  }
 }
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
@@ -196,8 +220,15 @@ export class ELSClient implements Logger {
     return headers;
   }
 
-  private enrich(entry: ErrorEntry): Required<Pick<ErrorEntry, "traceId" | "timestamp" | "appSlug" | "deploymentEnv" | "url" | "source">> & ErrorEntry {
-    const enriched = {
+  private enrich(entry: WritableErrorEntry): WritableErrorEntry {
+    // Treat an empty url as absent: in a browser fall back to location.href,
+    // otherwise leave it out entirely. Sending "" makes the server reject the
+    // whole entry (url must be non-empty), and a server-source entry has none.
+    const ownUrl = entry.url && entry.url.length > 0 ? entry.url : undefined;
+    const resolvedUrl =
+      ownUrl ?? (typeof location !== "undefined" ? location.href : undefined);
+
+    const enriched: WritableErrorEntry = {
       ...entry,
       traceId: entry.traceId ?? generateTraceId(),
       timestamp: entry.timestamp ?? new Date().toISOString(),
@@ -205,9 +236,11 @@ export class ELSClient implements Logger {
       deploymentEnv: entry.deploymentEnv ?? this.deploymentEnv,
       serviceName: entry.serviceName ?? this.serviceName,
       appVersion: entry.appVersion ?? this.appVersion,
-      url: entry.url ?? (typeof location !== "undefined" ? location.href : ""),
       source: entry.source ?? detectSource(),
     };
+
+    if (resolvedUrl) enriched.url = resolvedUrl;
+    else delete enriched.url;
 
     // Auto-fill browser-only fields (no-op on the server).
     if (this.autoContext) collectBrowserContext(enriched);
@@ -273,8 +306,10 @@ export class ELSClient implements Logger {
       const payload = this.enrich(entry);
       const res = await this.doFetch("/errors", payload);
       if (!res.ok && res.status !== 429) {
-        // Silent fail: never break the host application on a bad response.
-        console.error(`[ELSClient] sendError failed: ${res.status}`);
+        // Surface the response body (validation details) so a rejected entry is
+        // diagnosable instead of vanishing. Never break the host application.
+        const detail = await readBodySafe(res);
+        console.error(`[ELSClient] sendError failed: ${res.status}`, detail);
       }
     } catch (err) {
       console.error("[ELSClient] sendError network error:", err);
@@ -294,7 +329,8 @@ export class ELSClient implements Logger {
       const payload = { errors: entries.map((e) => this.enrich(e)) };
       const res = await this.doFetch("/errors/batch", payload);
       if (!res.ok) {
-        console.error(`[ELSClient] sendBatch failed: ${res.status}`);
+        const detail = await readBodySafe(res);
+        console.error(`[ELSClient] sendBatch failed: ${res.status}`, detail);
         return null;
       }
       try {
@@ -367,11 +403,13 @@ export class ELSClient implements Logger {
       "appSlug", "serviceName", "deploymentEnv", "fingerprint", "sessionId",
     ]);
 
-    const entry: ErrorEntry & Record<string, unknown> = {
+    // Do NOT seed url with "": an empty url is not nullish, so it would defeat
+    // the location.href fallback in enrich() and the server rejects it. Leave
+    // url unset here and let enrich() resolve it (browser → location.href).
+    const entry: WritableErrorEntry & Record<string, unknown> = {
       message,
       level: mapLogLevel(level),
       source: detectSource(),
-      url: typeof merged.url === "string" ? (merged.url as string) : "",
     };
 
     for (const [k, v] of Object.entries(merged)) {
@@ -379,6 +417,8 @@ export class ELSClient implements Logger {
         (entry as Record<string, unknown>)[k] = v;
       }
     }
+    // Guard against a binding that passes an empty url — treat it as absent.
+    if (entry.url === "") delete entry.url;
     if (stack && !entry.stack) entry.stack = stack;
 
     // Arbitrary custom fields become top-level payload fields (ELS accepts and
@@ -391,8 +431,10 @@ export class ELSClient implements Logger {
     }
     Object.assign(entry, customFields);
 
-    // Fire-and-forget — never throws to the caller.
-    this.sendError(entry).catch((err) => {
+    // Fire-and-forget — never throws to the caller. The entry is built
+    // internally with a runtime-resolved source, so it is sound to pass to the
+    // strict public signature.
+    this.sendError(entry as ErrorEntry).catch((err) => {
       if (typeof console !== "undefined") {
         console.error("[ELSClient.logger] failed to send log:", err);
       }

@@ -11,24 +11,16 @@ export type DeploymentEnv = "DEV" | "STAGING" | "PRODUCTION";
 export type AuthHeader = "bearer" | "x-api-key";
 
 /**
- * A single error/log entry sent to ELS.
- *
- * `message` is the only field you must provide. The SDK auto-fills the rest:
- * `traceId`, `timestamp`, `source`, `sessionId`, identity fields from
- * {@link ELSConfig} (`appSlug`, `serviceName`, `deploymentEnv`, `appVersion`),
- * and — in a browser — `url`, `userAgent`, `language`, `screenSize`,
- * `viewportSize`, `referrer` and `browser`.
+ * Fields shared by every error/log entry, regardless of `source`. `url` and
+ * `source` are intentionally excluded here — they are added by the
+ * {@link ErrorEntry} union below, which encodes the rule that a `"client"`
+ * entry must carry a `url` while a `"server"` entry may omit it.
  */
-export interface ErrorEntry {
+export interface ErrorEntryBase {
   /** Correlation id for this entry. Auto-generated (UUID-like) if omitted. */
   traceId?: string;
   /** The error/log text. **Required.** */
   message: string;
-  /**
-   * URL where the error occurred. In a browser it defaults to `location.href`;
-   * on the server it is empty unless set (e.g. via a request helper).
-   */
-  url?: string;
   /** ISO-8601 timestamp. Defaults to the moment the entry is captured. */
   timestamp?: string;
   /** Stack trace. Populated automatically by error-boundary / handler helpers. */
@@ -47,8 +39,6 @@ export interface ErrorEntry {
   referrer?: string;
   /** Severity. Defaults depend on the call (`error` for errors, explicit for messages). */
   level?: ErrorLevel;
-  /** Origin. Auto-detected: `"client"` in a browser, `"server"` in Node. */
-  source?: ErrorSource;
   /** Browser name + major version. Auto-derived from the user-agent in a browser. */
   browser?: string;
   /** Optional category/tag used for grouping in the ELS dashboard. */
@@ -74,6 +64,57 @@ export interface ErrorEntry {
    */
   appVersion?: string;
 }
+
+/**
+ * A single error/log entry sent to ELS.
+ *
+ * `message` is the only field you must provide for the common (source-omitted)
+ * case. The SDK auto-fills the rest: `traceId`, `timestamp`, `source`,
+ * `sessionId`, identity fields from {@link ELSConfig} (`appSlug`,
+ * `serviceName`, `deploymentEnv`, `appVersion`), and — in a browser — `url`,
+ * `userAgent`, `language`, `screenSize`, `viewportSize`, `referrer` and
+ * `browser`.
+ *
+ * The type is a discriminated union on `source` that encodes the ELS contract:
+ * - `source: "client"` — `url` is **required** (a client event always happens
+ *   at a URL; in a browser pass `location.href`).
+ * - `source: "server"` — `url` is **optional** (server events legitimately have
+ *   no URL).
+ * - `source` omitted — `url` is optional; the SDK fills `location.href` in a
+ *   browser and detects the source at runtime.
+ */
+export type ErrorEntry =
+  | (ErrorEntryBase & {
+      /** Origin: browser. A client entry must carry the URL where it occurred. */
+      source: "client";
+      /** URL where the error occurred. **Required** for client entries. */
+      url: string;
+    })
+  | (ErrorEntryBase & {
+      /** Origin: server. Server entries may have no URL. */
+      source: "server";
+      /** URL where the error occurred. Optional for server entries. */
+      url?: string;
+    })
+  | (ErrorEntryBase & {
+      /** Origin auto-detected at runtime when omitted. */
+      source?: undefined;
+      /**
+       * URL where the error occurred. In a browser it defaults to
+       * `location.href`; on the server it is omitted unless set.
+       */
+      url?: string;
+    });
+
+/**
+ * Loosely-typed entry used internally for enrichment and the logger path, where
+ * `source` is resolved at runtime and `url` may be filled afterwards. Public
+ * APIs (`sendError`/`sendBatch`) expose the stricter {@link ErrorEntry} union.
+ */
+export type WritableErrorEntry = ErrorEntryBase & {
+  url?: string;
+  source?: ErrorSource;
+};
 
 /**
  * Configuration for an {@link ELSClient}. Only `apiKey` and `appSlug` are

@@ -1,8 +1,8 @@
 {
   "name": "@inso_web/els-client",
-  "version": "0.5.1",
-  "description": "Легковесный TypeScript‑клиент для Error Logs Service (ELS) — сбор, батчинг и отправка ошибок из браузера и Node.js. Zero dependencies, retry с поддержкой Retry-After, silent fail, sendBeacon, идемпотентность по traceId, universal (browser + Node >=18).",
-  "homepage": "https://api.insoweb.ru/els",
+  "version": "0.5.2",
+  "description": "Lightweight TypeScript client for the Error Logs Service (ELS) — capture, batch and ship errors from the browser and Node.js. Zero dependencies, retry with Retry-After support, silent fail, sendBeacon, traceId idempotency, universal (browser + Node >=18).",
+  "homepage": "https://els.insoweb.ru",
   "author": "INSOWEB",
   "type": "module",
   "main": "./dist/index.cjs",
